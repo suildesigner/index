@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Member Folders</title>
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.js"></script>
+    <style>
+        #sortable { list-style-type: none; margin: 0; padding: 0; overflow: auto; height: 100vh; width: 20%; position: fixed; }
+        #pdf-container { width: 75%; margin-left: 25%; height: 100vh; overflow: auto; }
+        #pdf-selector { margin-bottom: 20px; }
+        #sortable li { margin: 5px; padding: 5px; border: 1px solid #ccc; cursor: move; }
+        .selected { background-color:#f39800; color:#fff; }
+        .individual { background-color:#0000ff; color:#fff; }
+    </style>
+</head>
+<body>
+    <div id="folder-container">
+        <button id="add-folder-button">추가하기</button>
+        <button id="delete-folder-button" disabled>삭제하기</button>
+        <ul id="sortable"></ul>
+    </div>
+    <div id="pdf-container">
+        <div id="pdf-selector"></div>
+        <object id="pdf-viewer" type="application/pdf" width="100%" height="100%"></object>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            var currentPdfUrl = "";
+        var selectedFolders = [];
+        $.ajax({url: "get_folders.php", dataType: "json", success: function(result) {
+            result.folderNames.forEach(function(folder, index) {
+                var trimmedFolderName = folder.substring(5, folder.length - 4);
+                $('#sortable').append('<li class="folder-li" data-folder="'+folder+'" data-order="'+index+'">'+trimmedFolderName+'</li>');
+            });
+
+            $('.folder-li').click(function() {
+                var selectedFolder = $(this).data('folder');
+                $('#pdf-selector').html('');
+                $.ajax({url: "get_pdfs.php?folder="+selectedFolder, dataType: "json", success: function(result) {
+                    result.pdfNames.forEach(function(pdf) {
+                        var pdfUrl = "./member/" + selectedFolder + "/" + pdf;
+                        var button = $('<button>').text(pdf).click(function(e) {
+                            e.preventDefault();
+                            window.open(pdfUrl, '_blank');
+                        });
+                        $('#pdf-selector').append(button);
+                    });
+                    if (result.pdfNames.length > 0) {
+                        currentPdfUrl = "./member/" + selectedFolder + "/" + result.pdfNames[0];
+                        $('#pdf-viewer').attr('data', currentPdfUrl);
+                    }
+                }});
+                $(this).addClass('individual').siblings().removeClass('individual');
+            });
+
+                $('.folder-li').on('mousedown', function(e) {
+                    if (e.shiftKey) {
+                        e.preventDefault();
+                        $(this).toggleClass('selected');
+                        if ($(this).hasClass('selected')) {
+                            selectedFolders.push($(this).data('folder'));
+                        } else {
+                            var index = selectedFolders.indexOf($(this).data('folder'));
+                            if (index > -1) {
+                                selectedFolders.splice(index, 1);
+                            }
+                        }
+                        $('#delete-folder-button').prop('disabled', selectedFolders.length === 0);
+                    }
+                });
+
+                $( "#sortable" ).sortable({
+                    stop: function( event, ui ) {
+                        $('#sortable li').each(function(index, li) {
+                            var folder = $(li).data('folder');
+                            $.ajax({
+                                method: "POST",
+                                url: "update_order.php",
+                                data: { folder_name: folder, order_number: index }
+                            })
+                            .done(function( msg ) {
+                                console.log( "Order Updated: " + msg );
+                            });
+                        });
+                    }
+                });
+            }});
+
+            $('#add-folder-button').click(function() {
+                var folderName = prompt("폴더명을 입력해주세요.");
+                if (folderName) {
+                    $('<input type="file" multiple>')
+                    .on('change', function() {
+                        var files = this.files;
+                        var formData = new FormData();
+                        formData.append('folderName', folderName);
+                        for (var i=0; i<files.length; i++) {
+                            formData.append('files[]', files[i]);
+                        }
+                        $.ajax({
+                            url: 'upload_files.php',
+                            type: 'POST',
+                            data: formData,
+                            processData: false,
+                            contentType: false,
+                            success: function(data) {
+                                alert('파일이 성공적으로 업로드 되었습니다.');
+                                location.reload();
+                            }
+                        });
+                    })
+                    .click();
+                }
+            });
+
+            $('#delete-folder-button').click(function() {
+                if (confirm("선택된 폴더를 삭제하시겠습니까?")) {
+                    $.ajax({
+                        url: 'delete_folders.php',
+                        type: 'POST',
+                        data: { folderNames: selectedFolders },
+                        success: function(data) {
+                            alert('폴더가 성공적으로 삭제되었습니다.');
+                            location.reload();
+                        }
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
